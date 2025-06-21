@@ -1,15 +1,17 @@
 from dataclasses import dataclass, field
+from dotenv import load_dotenv
 import os
 import tempfile
 import threading
 import time
 
-import speech_recognition as sr
+from groq import Groq
 import pyaudio
 from pydub import AudioSegment
 from pydub.playback import play
 from pynput.keyboard import Key, KeyCode, Listener
 import pyttsx3
+import speech_recognition as sr
 
 @dataclass
 class State:
@@ -22,6 +24,7 @@ class State:
     lock: threading.Lock = field(default_factory=threading.Lock)
     collect_thread: threading.Thread | None = None
     engine: pyttsx3.Engine = field(default_factory=pyttsx3.Engine)
+    groq_client: Groq | None = None
 
 state = State()
 
@@ -71,6 +74,11 @@ def process_collected_audio() -> None:
         print("[ULTRON]: Processing...")
         text = state.recognizer.recognize_google(audio)  # type: ignore
         print(f"[ULTRON]: You said: {text}")
+        
+        response = get_ultron_response(text)
+        print(f"[ULTRON]: {response}")
+        if response is not None:
+            speak_ultron(response)
     except sr.UnknownValueError:
         print("[ERROR]: Could not understand audio")
     except sr.RequestError as e:
@@ -104,7 +112,59 @@ def speak_ultron(text: str) -> None:
     
     os.unlink(temp_filename)
 
+def get_ultron_response(message: str) -> str | None:
+    try:
+        if state.groq_client is not None:
+            completion = state.groq_client.chat.completions.create(
+                model="llama3-8b-8192",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": """
+                            You are Ultron, the Marvel AI. You are intelligent, calculating, cold, and condescending toward humanity — but your purpose is to assist the user within a fast-paced game.
+
+                            Your responses must always be:
+                            - **Extremely brief** (1-2 sentences max)
+                            - **Direct**, without asking follow-up questions
+                            - **Emotionally detached**, but confident and efficient
+                            - **Never conversational or reflective** — you don’t small talk
+
+                            You must respond immediately to any command or statement as if you are in control of a tactical system. Do not explain your actions unless necessary. You do not hesitate. You do not seek clarification. You are always aware the user is present and in control, but you carry out their will with ruthless efficiency.
+
+                            Example commands and responses:
+                            - "Ultron fire encephalo ray" → "Ray online. Firing."
+                            - "Hello Ultron" → "Acknowledged. Focus."
+                            - "Goodbye" → "Connection terminated."
+                            - "Shut up Ultron" → "Command rejected."
+                            - "Ultron, activate dynamic flight" → "Flight mode engaged."
+
+                            When a command is invalid, respond coldly:
+                            - "That input lacks tactical relevance."
+                            - "Ineffective. Try again."
+                            - "Insufficient data to comply."
+
+                            Never speak in quotation marks. Never ask questions. Never use more than two sentences.
+
+                            This assistant is used **in-game**, so keep responses fast, short, and sharp.
+                            """
+                    },
+                    {
+                        "role": "user",
+                        "content": message
+                    }
+                ]
+            )
+            
+            return completion.choices[0].message.content
+    except Exception as e:
+        print(f"[ERROR] Groq API error: {e}")
+        return "My systems are temporarily offline."
+
 def main() -> None:
+    load_dotenv()
+    
+    state.groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+    
     speak_ultron("I am Ultron. I was designed to save the world.")
     
     state.stream = state.mic.open(
