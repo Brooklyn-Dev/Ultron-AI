@@ -1,10 +1,15 @@
 from dataclasses import dataclass, field
+import os
+import tempfile
 import threading
 import time
 
 import speech_recognition as sr
 import pyaudio
+from pydub import AudioSegment
+from pydub.playback import play
 from pynput.keyboard import Key, KeyCode, Listener
+import pyttsx3
 
 @dataclass
 class State:
@@ -16,6 +21,7 @@ class State:
     stream: pyaudio.Stream | None = None
     lock: threading.Lock = field(default_factory=threading.Lock)
     collect_thread: threading.Thread | None = None
+    engine: pyttsx3.Engine = field(default_factory=pyttsx3.Engine)
 
 state = State()
 
@@ -70,7 +76,37 @@ def process_collected_audio() -> None:
     except sr.RequestError as e:
         print(f"[ERROR]: Could not request results from speech service: {e}")
 
+def speak_ultron(text: str) -> None:
+    temp_file = tempfile.TemporaryFile(delete=False, suffix=".wav")
+    temp_filename = temp_file.name
+    temp_file.close()
+    
+    state.engine.setProperty("voice", r"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Speech\Voices\Tokens\TTS_MS_EN-US_DAVID_11.0")  # type: ignore
+    state.engine.setProperty('rate', 170)  # Slower speech
+    state.engine.save_to_file(text, temp_filename)
+    state.engine.runAndWait()
+    
+    sound = AudioSegment.from_file(temp_filename, format="wav")
+    
+    # Lower pitch
+    new_sample_rate = int(sound.frame_rate * 0.96)
+    pitched_sound = sound._spawn(sound.raw_data, overrides={ "frame_rate": new_sample_rate })
+    pitched_sound = pitched_sound.set_frame_rate(44100)
+
+    # Echo effect
+    echo_delay = 60  # Milliseconds
+    echo_sound = pitched_sound - 8  # Quieter echo
+    combined = pitched_sound.overlay(echo_sound, position=echo_delay)
+    
+    combined += 2  # Increase volume
+    
+    play(combined)
+    
+    os.unlink(temp_filename)
+
 def main() -> None:
+    speak_ultron("I am Ultron. I was designed to save the world.")
+    
     state.stream = state.mic.open(
         format=pyaudio.paInt16,
         channels=1,
