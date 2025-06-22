@@ -1,8 +1,10 @@
+import ctypes
 from dataclasses import dataclass, field
 from dotenv import load_dotenv
 import os
 import queue
 import random
+import sys
 import tempfile
 import threading
 import time
@@ -16,6 +18,30 @@ from pydub.playback import play
 from pynput.keyboard import Key, KeyCode, Controller as KeyController, Listener
 import pyttsx3
 import speech_recognition as sr
+
+def is_admin() -> bool:
+    try:
+        if os.name == "nt":  # Windows
+            return ctypes.windll.shell32.IsUserAnAdmin()
+        else:  # Unix/Linux/macOS
+            return os.geteuid() == 0
+    except OSError as e:
+        print(f"[ERROR]: OS error encountered while admin check: {e}", file=sys.stderr)
+        return False
+    except Exception as e:
+        print(f"[ERROR]: An unexpected error occurred during admin check: {e}", file=sys.stderr)
+        return False
+    
+def check_admin_privileges() -> None:
+    if not is_admin():
+        print("[ERROR]: This script must be run as Administrator", file=sys.stderr)
+        if os.name == "nt":  # Windows
+            print('[SYSTEM]: Right-click start.bat and select "Run as administrator"', file=sys.stderr)
+        else:  # Unix/Linux/macOS
+            print('[SYSTEM]: Please run "sudo ./start.sh"', file=sys.stderr)
+        sys.exit(1)
+    else:
+        print("[SYSTEM]: Admin privileges confirmed")
 
 @dataclass
 class State:
@@ -298,6 +324,8 @@ def process_command(command_string: str) -> None:
                 break
             
 def main() -> None:
+    check_admin_privileges()
+    
     load_dotenv()
     
     state.groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
