@@ -11,8 +11,11 @@ import time
 from typing import Callable, Tuple
 import win32gui
 
+import cv2
 from groq import Groq
+import numpy as np
 from obsws_python import ReqClient
+from PIL import ImageGrab
 import pyaudio
 import pyautogui
 from pydub import AudioSegment
@@ -63,6 +66,10 @@ class State:
     mouse: MouseController = field(default_factory=MouseController)
     is_team_chat: bool = True
     obs_client: ReqClient | None = None
+    vision_thread: threading.Thread | None = None
+    vision_running: bool = True
+    ult_was_ready: bool = False
+    last_ult_check: float = 0
 
 state = State()
 
@@ -344,6 +351,14 @@ def find_rivals_window() -> int | None:
     win32gui.EnumWindows(callback, windows)
     return windows[0][0] if windows else None
 
+def is_rivals_window_active() -> bool:
+    hwnd = find_rivals_window()
+    if not hwnd:
+        return False
+    
+    forground_hwnd = win32gui.GetForegroundWindow()
+    return hwnd == forground_hwnd
+
 def insta_lock() -> None:
     rivals_hwnd = find_rivals_window()
     if not rivals_hwnd:
@@ -468,6 +483,7 @@ def obs_save_clip() -> None:
 
 def shutdown() -> None:
     time.sleep(2)
+    state.vision_running = False
     state.running = False
 
 def process_command(command_string: str) -> None:   
@@ -541,7 +557,61 @@ def process_command(command_string: str) -> None:
             add_task(obs_save_clip, tuple([]))
         elif cmd.startswith("shutdown"):
             add_task(shutdown, tuple([]))
+      
+def vision_thread() -> None:
+    while state.running and state.vision_running:
+        if not is_rivals_window_active():
+            time.sleep(0.5)
+            continue
+        
+        current_time = time.time()
+        
+        if current_time - state.last_ult_check > 2:
+            state.last_ult_check = current_time
             
+            try:
+                ult_ready = check_ult_ready()
+                
+                if ult_ready and not state.ult_was_ready:
+                    speak_ultron("Ultimate ready.")
+                    state.ult_was_ready = True
+                elif not ult_ready:
+                    state.ult_was_ready = False
+            except Exception as e:
+                print(f"[ERROR]: Failed to detect ultimate status: {e}", file=sys.stderr)
+            
+        time.sleep(0.5)
+
+def check_ult_ready() -> bool:
+    rivals_hwnd = find_rivals_window()
+    if not rivals_hwnd:
+        return False
+    
+    left, top, right, bottom = win32gui.GetWindowRect(rivals_hwnd)
+    win_width = right - left
+    win_height = bottom - top
+
+    # Get ult status area from relative in-game bounds
+    ult_area = ImageGrab.grab(bbox=(
+        int(win_width * 0.9198),
+        int(win_height * 0.8907),
+        int(win_width * 0.9521),
+        int(win_height * 0.9407)
+    ))
+    
+    img = np.array(ult_area)
+    hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)
+    
+    lower_yellow = np.array([25, 150, 150])
+    upper_yellow = np.array([50, 255, 255])
+    
+    yellow_mask = cv2.inRange(hsv, lower_yellow, upper_yellow)
+    yellow_pixels = cv2.countNonZero(yellow_mask)
+    
+    return yellow_pixels > 50
+   
+threading.Thread(target=vision_thread, daemon=True).start()   
+
 def main() -> None:
     check_admin_privileges()
     
