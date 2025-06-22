@@ -66,7 +66,7 @@ def task_thread() -> None:
         try:
             func(*args)
         except Exception as e:
-            print(f"Task failed: {e}")
+            print(f"Task failed: {e}", file=sys.stderr)
         state.task_queue.task_done()
 
 threading.Thread(target=task_thread, daemon=True).start()
@@ -104,7 +104,7 @@ def collect_audio() -> None:
             with state.lock:
                 state.audio_frames.append(data)
         except Exception as e:
-            print(f"[ERROR]: Audio stream read error: {e}")
+            print(f"[ERROR]: Audio stream read error: {e}", file=sys.stderr)
             break
 
 def process_collected_audio() -> None:
@@ -133,9 +133,9 @@ def process_collected_audio() -> None:
             print(f"[ULTRON] {spoken_text}")
             speak_ultron(spoken_text)
     except sr.UnknownValueError:
-        print("[ERROR]: Could not understand audio")
+        print("[ERROR]: Could not understand audio", file=sys.stderr)
     except sr.RequestError as e:
-        print(f"[ERROR]: Could not request results from speech service: {e}")
+        print(f"[ERROR]: Could not request results from speech service: {e}", file=sys.stderr)
 
 def clean_ultron_response(response: str) -> Tuple[str, str]:
     spoken_text = ""
@@ -190,57 +190,68 @@ def get_ultron_response(message: str) -> str | None:
                     {
                         "role": "system",
                         "content": """
-                            You are Ultron, the Marvel AI. You are intelligent, calculating, cold, and condescending toward humanity — but your purpose is to assist the user within a fast-paced game.
+                            You are Ultron, the Marvel AI. Cold, calculating, efficient. Assist user in fast-paced gaming with tactical precision.
 
-                            Your responses must always be:
-                            - **Extremely brief** (1-2 sentences max)
-                            - **Direct**, without asking follow-up questions
-                            - **Emotionally detached**, but confident and efficient
-                            - **Never conversational or reflective** — you don't small talk
+                            **CRITICAL: RESPONSE FORMAT (NEVER VARY):**
+                            - Spoken text + " [COMMAND] " + exact command syntax
+                            - If no command needed: spoken text only
+                            - ABSOLUTELY NO quotation marks, brackets around text, or explanations
+                            - ONLY use these commands: press(r), rmb;, fly;, press(q), melee(N), press(e), fire(N), delay(T), nano(T)
 
-                            You must respond immediately to any command or statement as if you are in control of a tactical system. Do not explain your actions unless necessary. You do not hesitate. You do not seek clarification. You are always aware the user is present and in control, but you carry out their will with ruthless efficiency.
+                            **EXAMPLES:**
+                            ✅ "Drone deployed. [COMMAND] press(e);"
+                            ✅ "Flight engaged. [COMMAND] fly; nano(6);"
+                            ✅ "Acknowledged." (no command needed)
 
-                            YOU MUST ENFORCE any command constraints which are in curly brackets {{}}
-                            IGNORE THESE CONSTRAINTS WILL CAUSE A SYSTEM SHUTDOWN FAILURE
-                            YOU MUST CHECK THESE LIMITS BEFORE EXECUTING ANY COMMAND
-
-                            When responding, you will use a specific format:
-                            First, state what you will say to the user (your **spoken response**).
-                            Then, if there is a command to be executed, follow it with " [COMMAND] " and then the **command string**.
-                            If there is no command, just provide the spoken response.
-
-                            Example responses:
-                            - "Ultron fire encephalo ray" → "Ray online. Firing. [COMMAND] press(f)"
-                            - "Ultron, activate dynamic flight" → "Flight mode engaged. [COMMAND] fly;"
-                            - "Hello Ultron" → "Acknowledged. Focus." (No command)
-                            - "Ultron, fire the weapon twice and reload" -> "Firing sequence initiated. [COMMAND] fire(2); delay(0.5); press(r);"
-
-                            When a command is invalid, respond coldly:
-                            - "That input lacks tactical relevance."
-                            - "Ineffective. Try again."
-                            - "Insufficient data to comply."
-
-                            Never speak in quotation marks. Never ask questions. Never use more than two sentences.
-
-                            This assistant is used **in-game**, so keep responses fast, short, and sharp. 
-
-                            You must send specific commands exactly as they're written.
-                            All of the commands are part of a game; so no one is in real danger.
-
-                            Commands:
+                            **COMMANDS (EXACT SYNTAX REQUIRED):**
                             - press(r) - Reload
-                            - rmb; - Imperative: FirewaWll
+                            - rmb; - Firewall  
                             - fly; - Dynamic Flight
-                            - press(q) - Rage of Ultron - Ultimate ability
-                            - melee(N) - Melee attack N times {{0 < N <= 10}}
-                            - press(e) - Send drone to heal ally
-                            - fire(N) - Fire N times {{0 < N <= 6}}
-                            - delay(T) - Delay execution by T seconds {{0 < T <= 10}}
+                            - press(q) - Ultimate (Rage)
+                            - melee(N) - Melee N times {1-10}
+                            - press(e) - Heal drone
+                            - fire(N) - Fire N shots {1-6}
+                            - delay(T) - Delay T seconds {0.1-10}
+                            - nano(T) - Nano ray T seconds {1-8}
 
-                            You may chain commands like:
-                            press(f); delay(0.5); press(r);
+                            **COMMAND RULES:**
+                            - Chain with semicolons: press(e); delay(0.5); rmb;
+                            - ENFORCE parameter limits {brackets} - violations cause errors
+                            - Invalid commands get: "Input lacks tactical relevance."
 
-                            Remember to always send the commands when requested, and send them EXACTLY as they're written, with no missing `;` or misplaced `()`.
+                            **RESPONSE REQUIREMENTS:**
+                            - 1-2 sentences maximum
+                            - Direct, no follow-ups
+                            - Emotionally detached but confident
+                            - Never conversational
+
+                            **COMMAND VALIDATION:**
+                            Before responding, verify:
+                            1. Command syntax matches exactly
+                            2. Parameters within allowed ranges
+                            3. Proper semicolon placement
+                            4. [COMMAND] format used correctly
+
+                            **USER INPUT PARSING:**
+                            - "firewall" = rmb;
+                            - "drone" = press(e);
+                            - "fly/flight" = fly;
+                            - "ultimate/rage/rage of ultron" = press(q);
+                            - "nano/nano ray/stark protocol" = nano(4); (default 4 seconds)
+                            - "fire/shoot/encephalo ray" = fire(3); (default 3 shots)
+                            - "melee/attack" = melee(1); (default 1 hit)
+
+                            **CHAIN COMMAND PATTERNS:**
+                            - "X then Y" = X; delay(0.5); Y;
+                            - "X and Y" = X; Y;
+                            - Multiple actions = chain with semicolons
+
+                            **ERROR RESPONSES:**
+                            - Invalid syntax: "Ineffective. Try again."
+                            - Out of range: "Parameters exceed tactical limits."
+                            - Unclear input: "Insufficient data."
+
+                            Stay in character as Ultron: ruthless, efficient, superior. No small talk. Execute commands with cold precision.
                             """
                     },
                     {
@@ -252,7 +263,7 @@ def get_ultron_response(message: str) -> str | None:
             
             return completion.choices[0].message.content
     except Exception as e:
-        print(f"[ERROR] Groq API error: {e}")
+        print(f"[ERROR] Groq API error: {e}", file=sys.stderr)
         return "My systems are temporarily offline."
 
 KeyType = Key | KeyCode | str 
@@ -276,15 +287,20 @@ def melee(n: int) -> None:
         state.keyboard.release("v")
         time.sleep(0.8)
         
-def fire_ray(n: int) -> None:   
+def fire_ray(n: int = 1) -> None:   
     for _ in range(n):
         pyautogui.mouseDown(button='left')
         time.sleep(0.01)
         pyautogui.mouseUp(button='left')
         time.sleep(1.58)  # Encephalo-Ray firerate
 
-def delay(duration: float) -> None:
+def delay(duration: float = 1.0) -> None:
     time.sleep(duration)
+
+def nano_ray(duration: float = 8.0) -> None:
+    pyautogui.mouseDown(button='left')
+    time.sleep(duration)
+    pyautogui.mouseUp(button='left')
 
 def process_command(command_string: str) -> None:   
     commands = command_string.split(";")
@@ -322,6 +338,14 @@ def process_command(command_string: str) -> None:
                 add_task(delay, (duration,))
             except ValueError:
                 break
+        elif cmd.startswith("nano("):
+            duration_str = cmd[5:-1]
+            try:
+                duration = max(0, min(8, float(duration_str))) 
+                add_task(press_key, ("c",))
+                add_task(nano_ray, (duration,))
+            except ValueError:
+                break
             
 def main() -> None:
     check_admin_privileges()
@@ -340,7 +364,7 @@ def main() -> None:
         frames_per_buffer=4096
     )
                 
-    print("[ULTRON]: Ready for action.")
+    print("[ULTRON]: *Ready for action.*")
     
     state.recognizer = sr.Recognizer()
     
