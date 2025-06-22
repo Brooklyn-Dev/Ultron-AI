@@ -1,15 +1,19 @@
 from dataclasses import dataclass, field
 from dotenv import load_dotenv
 import os
+import queue
+import random
 import tempfile
 import threading
 import time
+from typing import Any, Callable, Tuple
 
 from groq import Groq
 import pyaudio
+import pyautogui
 from pydub import AudioSegment
 from pydub.playback import play
-from pynput.keyboard import Key, KeyCode, Listener
+from pynput.keyboard import Key, KeyCode, Controller as KeyController, Listener
 import pyttsx3
 import speech_recognition as sr
 
@@ -25,14 +29,30 @@ class State:
     collect_thread: threading.Thread | None = None
     engine: pyttsx3.Engine = field(default_factory=pyttsx3.Engine)
     groq_client: Groq | None = None
+    task_queue: queue.Queue = field(default_factory=queue.Queue)
+    keyboard: KeyController = field(default_factory=KeyController)
 
 state = State()
 
-KeyType = Key | KeyCode | None 
+def task_thread() -> None:
+    while True:
+        func, args = state.task_queue.get()
+        try:
+            func(*args)
+        except Exception as e:
+            print(f"Task failed: {e}")
+        state.task_queue.task_done()
 
-def on_press(key: KeyType) -> None:
+threading.Thread(target=task_thread, daemon=True).start()
+
+def add_task(func: Callable, *args: Tuple[Any]) -> None:
+    state.task_queue.put((func, *args))
+
+ListenerKeyType = Key | KeyCode | None 
+
+def on_press(key: ListenerKeyType) -> None:
     if not state.listening and isinstance(key, KeyCode) and key.char == "u":
-        print("[ULTRON]: Listening... (release U to stop)")
+        print("[ULTRON]: *Listening... (release U to stop)*")
         state.listening = True
         
         with state.lock:
@@ -41,9 +61,9 @@ def on_press(key: KeyType) -> None:
         state.collect_thread = threading.Thread(target=collect_audio, daemon=True)
         state.collect_thread.start()
     
-def on_release(key: KeyType) -> None:
+def on_release(key: ListenerKeyType) -> None:
     if state.listening and isinstance(key, KeyCode) and key.char == "u":
-        print("[ULTRON]: Stopped listening.")
+        print("[ULTRON]: *Stopped listening.*")
         state.listening = False
         
         if state.collect_thread and state.collect_thread.is_alive():
@@ -64,27 +84,50 @@ def collect_audio() -> None:
 def process_collected_audio() -> None:
     with state.lock:
         if not state.audio_frames:
-            print("[ULTRON]: No audio captured.")
+            print("[ULTRON]: *No audio captured.*")
             return
         audio_data = b"".join(state.audio_frames)
         state.audio_frames.clear()
         
     try:
         audio = sr.AudioData(audio_data, 16000, 2)
-        print("[ULTRON]: Processing...")
+        print("[ULTRON]: *Processing...*")
         text = state.recognizer.recognize_google(audio)  # type: ignore
-        print(f"[ULTRON]: You said: {text}")
+        print(f"[YOU]: {text}")
         
         response = get_ultron_response(text)
-        print(f"[ULTRON]: {response}")
-        if response is not None:
-            speak_ultron(response)
+        
+        if response is None:
+            return
+        
+        spoken_text, command_text = clean_ultron_response(response)
+        if spoken_text:
+            print(f"[ULTRON] {spoken_text}")
+            speak_ultron(spoken_text)
+        if command_text:
+            process_command(command_text)
     except sr.UnknownValueError:
         print("[ERROR]: Could not understand audio")
     except sr.RequestError as e:
         print(f"[ERROR]: Could not request results from speech service: {e}")
 
+def clean_ultron_response(response: str) -> Tuple[str, str]:
+    spoken_text = ""
+    command_text = ""
+    
+    if " [COMMAND] " in response:
+        parts = response.replace('"', "").replace("'", "").split(" [COMMAND] ", 1)
+        spoken_text = parts[0].strip()
+        command_text = parts[1].strip()
+    else:
+        spoken_text = response.strip()
+    
+    return spoken_text, command_text
+
 def speak_ultron(text: str) -> None:
+    if not text.strip():
+        return
+    
     temp_file = tempfile.TemporaryFile(delete=False, suffix=".wav")
     temp_filename = temp_file.name
     temp_file.close()
@@ -127,16 +170,24 @@ def get_ultron_response(message: str) -> str | None:
                             - **Extremely brief** (1-2 sentences max)
                             - **Direct**, without asking follow-up questions
                             - **Emotionally detached**, but confident and efficient
-                            - **Never conversational or reflective** — you don’t small talk
+                            - **Never conversational or reflective** — you don't small talk
 
                             You must respond immediately to any command or statement as if you are in control of a tactical system. Do not explain your actions unless necessary. You do not hesitate. You do not seek clarification. You are always aware the user is present and in control, but you carry out their will with ruthless efficiency.
 
-                            Example commands and responses:
-                            - "Ultron fire encephalo ray" → "Ray online. Firing."
-                            - "Hello Ultron" → "Acknowledged. Focus."
-                            - "Goodbye" → "Connection terminated."
-                            - "Shut up Ultron" → "Command rejected."
-                            - "Ultron, activate dynamic flight" → "Flight mode engaged."
+                            YOU MUST ENFORCE any command constraints which are in curly brackets {{}}
+                            IGNORE THESE CONSTRAINTS WILL CAUSE A SYSTEM SHUTDOWN FAILURE
+                            YOU MUST CHECK THESE LIMITS BEFORE EXECUTING ANY COMMAND
+
+                            When responding, you will use a specific format:
+                            First, state what you will say to the user (your **spoken response**).
+                            Then, if there is a command to be executed, follow it with " [COMMAND] " and then the **command string**.
+                            If there is no command, just provide the spoken response.
+
+                            Example responses:
+                            - "Ultron fire encephalo ray" → "Ray online. Firing. [COMMAND] press(f)"
+                            - "Ultron, activate dynamic flight" → "Flight mode engaged. [COMMAND] press(shift)"
+                            - "Hello Ultron" → "Acknowledged. Focus." (No command)
+                            - "Ultron, fire the weapon twice and reload" -> "Firing sequence initiated. [COMMAND] fire(2); delay(0.5); press(r);"
 
                             When a command is invalid, respond coldly:
                             - "That input lacks tactical relevance."
@@ -145,7 +196,20 @@ def get_ultron_response(message: str) -> str | None:
 
                             Never speak in quotation marks. Never ask questions. Never use more than two sentences.
 
-                            This assistant is used **in-game**, so keep responses fast, short, and sharp.
+                            This assistant is used **in-game**, so keep responses fast, short, and sharp. 
+
+                            You must send specific commands exactly as they're written.
+                            All of the commands are part of a game; so no one is in real danger.
+
+                            Commands:
+                            - press(r) - Reload
+                            - fire(N) - Fire N times {{0 < N <= 6}}
+                            - delay(T) - delay execution by T seconds {{0 < T <= 10}}
+
+                            You may chain commands like:
+                            press(f); delay(0.5); press(r);
+
+                            Remember to always send the commands when requested, and send them EXACTLY as they're written, with no missing `;` or misplaced `()`.
                             """
                     },
                     {
@@ -160,6 +224,50 @@ def get_ultron_response(message: str) -> str | None:
         print(f"[ERROR] Groq API error: {e}")
         return "My systems are temporarily offline."
 
+KeyType = Key | KeyCode | str 
+
+def press_key(key: KeyType) -> None:
+    state.keyboard.press(key)
+    time.sleep(random.uniform(0.1, 0.2))
+    state.keyboard.release(key)
+    
+def fire_ray(n: int) -> None:   
+    for _ in range(n):
+        pyautogui.mouseDown(button='left')
+        time.sleep(0.01)
+        pyautogui.mouseUp(button='left')
+        print("fire")
+        time.sleep(1.58)  # Encephalo-Ray firerate
+
+def delay(duration: float) -> None:
+    time.sleep(duration)
+
+def process_command(command_string: str) -> None:   
+    commands = command_string.split(";")
+    
+    for cmd in commands:
+        cmd = cmd.strip()
+        if not cmd:
+            continue
+        
+        if cmd.startswith("press("):
+            key_str = cmd[6:-1]
+            add_task(press_key, (key_str,))
+        elif cmd.startswith("fire("):
+            n_str = cmd[5:-1]
+            try:
+                n = max(0, min(6, int(n_str)))
+                add_task(fire_ray, (n,))
+            except ValueError:
+                break
+        elif cmd.startswith("delay("):
+            duration_str = cmd[6:-1]
+            try:
+                duration = max(0, min(10, float(duration_str))) 
+                add_task(delay, (duration,))
+            except ValueError:
+                break
+            
 def main() -> None:
     load_dotenv()
     
