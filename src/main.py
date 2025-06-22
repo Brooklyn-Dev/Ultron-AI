@@ -101,11 +101,11 @@ def process_collected_audio() -> None:
             return
         
         spoken_text, command_text = clean_ultron_response(response)
+        if command_text:
+            process_command(command_text)
         if spoken_text:
             print(f"[ULTRON] {spoken_text}")
             speak_ultron(spoken_text)
-        if command_text:
-            process_command(command_text)
     except sr.UnknownValueError:
         print("[ERROR]: Could not understand audio")
     except sr.RequestError as e:
@@ -185,7 +185,7 @@ def get_ultron_response(message: str) -> str | None:
 
                             Example responses:
                             - "Ultron fire encephalo ray" → "Ray online. Firing. [COMMAND] press(f)"
-                            - "Ultron, activate dynamic flight" → "Flight mode engaged. [COMMAND] press(shift)"
+                            - "Ultron, activate dynamic flight" → "Flight mode engaged. [COMMAND] fly;"
                             - "Hello Ultron" → "Acknowledged. Focus." (No command)
                             - "Ultron, fire the weapon twice and reload" -> "Firing sequence initiated. [COMMAND] fire(2); delay(0.5); press(r);"
 
@@ -203,8 +203,13 @@ def get_ultron_response(message: str) -> str | None:
 
                             Commands:
                             - press(r) - Reload
+                            - rmb; - Imperative: FirewaWll
+                            - fly; - Dynamic Flight
+                            - press(q) - Rage of Ultron - Ultimate ability
+                            - melee(N) - Melee attack N times {{0 < N <= 10}}
+                            - press(e) - Send drone to heal ally
                             - fire(N) - Fire N times {{0 < N <= 6}}
-                            - delay(T) - delay execution by T seconds {{0 < T <= 10}}
+                            - delay(T) - Delay execution by T seconds {{0 < T <= 10}}
 
                             You may chain commands like:
                             press(f); delay(0.5); press(r);
@@ -231,12 +236,25 @@ def press_key(key: KeyType) -> None:
     time.sleep(random.uniform(0.1, 0.2))
     state.keyboard.release(key)
     
+def right_click() -> None:
+    pyautogui.mouseDown(button='right')
+    pyautogui.mouseUp(button='right')
+    
+def fly() -> None:
+    press_key(Key.shift_l)
+    
+def melee(n: int) -> None:   
+    for _ in range(n):
+        state.keyboard.press("v")
+        time.sleep(0.01)
+        state.keyboard.release("v")
+        time.sleep(0.8)
+        
 def fire_ray(n: int) -> None:   
     for _ in range(n):
         pyautogui.mouseDown(button='left')
         time.sleep(0.01)
         pyautogui.mouseUp(button='left')
-        print("fire")
         time.sleep(1.58)  # Encephalo-Ray firerate
 
 def delay(duration: float) -> None:
@@ -253,6 +271,17 @@ def process_command(command_string: str) -> None:
         if cmd.startswith("press("):
             key_str = cmd[6:-1]
             add_task(press_key, (key_str,))
+        elif cmd.startswith("rmb"):
+            add_task(right_click, tuple([]))
+        elif cmd.startswith("fly"):
+            add_task(fly, tuple([]))
+        elif cmd.startswith("melee("):
+            n_str = cmd[6:-1]
+            try:
+                n = max(0, min(10, int(n_str)))
+                add_task(melee, (n,))
+            except ValueError:
+                break
         elif cmd.startswith("fire("):
             n_str = cmd[5:-1]
             try:
