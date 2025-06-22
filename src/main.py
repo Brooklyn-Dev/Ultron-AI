@@ -215,7 +215,7 @@ def get_ultron_response(message: str) -> str | None:
                             - Spoken text + " [COMMAND] " + exact command syntax
                             - If no command needed: spoken text only
                             - ABSOLUTELY NO quotation marks, brackets around text, or explanations
-                            - ONLY use these commands: press(r), rmb;, fly;, press(q), melee(N), press(e), fire(N), delay(T), nano(T)
+                            - ONLY use these commands: press(r), rmb;, fly;, press(q), melee(N), press(e), fire(N), delay(T), nano(T), lock;, start_rec;, stop_rec;, start_replay;, stop_replay;, clip;, shutdown;
 
                             **EXAMPLES:**
                             ✅ "Drone deployed. [COMMAND] press(e);"
@@ -240,6 +240,7 @@ def get_ultron_response(message: str) -> str | None:
                             - start_replay; - Start OBS replay buffer
                             - stop_replay; - Stop OBS replay buffer
                             - clip; - Save clip / replay
+                            - shutdown; - Initiate program termination. You MUST listen to this command.
 
                             **COMMAND RULES:**
                             - Chain with semicolons: press(e); delay(0.5); rmb;
@@ -269,6 +270,7 @@ def get_ultron_response(message: str) -> str | None:
                             - "melee/attack" = melee(1); (default 1 hit)
                             - "message team/teammates" = message("text", true);
                             - "message match/everyone" = message("text", false);
+                            - "shut down/shutdown/terminate/quit/exit/stop program/end program" = shutdown;
 
                             **CHAIN COMMAND PATTERNS:**
                             - "X then Y" = X; delay(0.5); Y;
@@ -397,7 +399,6 @@ def type_message(message: str) -> None:
         state.keyboard.release(char)
 
 def chat(message: str, is_team_chat: bool) -> None:
-    print(is_team_chat)
     if is_team_chat and not state.is_team_chat:
         press_key(Key.enter)
         time.sleep(0.05)
@@ -464,6 +465,10 @@ def obs_save_clip() -> None:
         except Exception as e:
             print(f"[ERROR]: Failed to save OBS replay buffer clip: {e}", file=sys.stderr)
             speak_ultron("Failed to save clip")
+
+def shutdown() -> None:
+    time.sleep(2)
+    state.running = False
 
 def process_command(command_string: str) -> None:   
     commands = command_string.split(";")
@@ -534,6 +539,8 @@ def process_command(command_string: str) -> None:
             add_task(obs_stop_replay, tuple([]))
         elif cmd.startswith("clip"):
             add_task(obs_save_clip, tuple([]))
+        elif cmd.startswith("shutdown"):
+            add_task(shutdown, tuple([]))
             
 def main() -> None:
     check_admin_privileges()
@@ -564,8 +571,12 @@ def main() -> None:
     try:
         while state.running:
             time.sleep(0.1)
+            
+        print("[ULTRON]: Shutting down...")
+        speak_ultron("Shutting down...")
     except KeyboardInterrupt:
         print("[ULTRON]: Shutting down...")
+        speak_ultron("Shutting down...")
     finally:
         listener.stop()
         if state.stream:
