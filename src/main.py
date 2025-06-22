@@ -9,6 +9,7 @@ import tempfile
 import threading
 import time
 from typing import Any, Callable, Tuple
+import win32gui
 
 from groq import Groq
 import pyaudio
@@ -16,6 +17,7 @@ import pyautogui
 from pydub import AudioSegment
 from pydub.playback import play
 from pynput.keyboard import Key, KeyCode, Controller as KeyController, Listener
+from pynput.mouse import Button, Controller as MouseController
 import pyttsx3
 import speech_recognition as sr
 
@@ -57,6 +59,7 @@ class State:
     groq_client: Groq | None = None
     task_queue: queue.Queue = field(default_factory=queue.Queue)
     keyboard: KeyController = field(default_factory=KeyController)
+    mouse: MouseController = field(default_factory=MouseController)
 
 state = State()
 
@@ -213,6 +216,7 @@ def get_ultron_response(message: str) -> str | None:
                             - fire(N) - Fire N shots {1-6}
                             - delay(T) - Delay T seconds {0.1-10}
                             - nano(T) - Nano ray T seconds {1-8}
+                            - lock; - Insta-lock Ultron
 
                             **COMMAND RULES:**
                             - Chain with semicolons: press(e); delay(0.5); rmb;
@@ -302,6 +306,65 @@ def nano_ray(duration: float = 8.0) -> None:
     time.sleep(duration)
     pyautogui.mouseUp(button='left')
 
+def find_rivals_window() -> int | None:
+    def callback(hwnd, windows) -> None:
+        if win32gui.IsWindowVisible(hwnd):
+            window_text = win32gui.GetWindowText(hwnd)
+            if "rivals" in window_text.lower():
+                windows.append((hwnd, window_text))
+
+    windows = []
+    win32gui.EnumWindows(callback, windows)
+    return windows[0][0] if windows else None
+
+def insta_lock() -> None:
+    rivals_hwnd = find_rivals_window()
+    if not rivals_hwnd:
+        return
+    
+    win32gui.SetForegroundWindow(rivals_hwnd)
+        
+    left, top, right, bottom = win32gui.GetWindowRect(rivals_hwnd)
+    win_width = right - left
+    win_height = bottom - top
+    
+    sx, sy = state.mouse.position
+    
+    # Calculate target position from relative position in-game
+    tx = int(win_width * 0.8333)  # 1600/1920
+    ty = int(win_height * 0.5556)  # 600/1080
+    
+    duration = 0.4 + random.uniform(-0.1, 0.1)
+    steps = 50
+    step_interval = duration / steps
+
+    p1 = (sx + random.randint(-50, 50), sy + random.randint(-50, 50))
+    p2 = (tx + random.randint(-50, 50), ty + random.randint(-50, 50))
+    p3 = (tx, ty)
+
+    points = []
+    for i in range(steps + 1):
+        t = i / steps
+        
+        # Cubic Bezier formula: B(t) = (1-t)³P₀ + 3(1-t)²tP₁ + 3(1-t)t²P₂ + t³P₃
+        points.append(
+            (
+                int((1-t)**3 * sx + 3*(1-t)**2*t * p1[0] + 3*(1-t)*t**2 * p2[0] + t**3 * p3[0]),
+                int((1-t)**3 * sy + 3*(1-t)**2*t * p1[1] + 3*(1-t)*t**2 * p2[1] + t**3 * p3[1]),
+            )
+        )
+        
+    for point in points:
+        state.mouse.position = point
+        time.sleep(step_interval)
+        
+    for _ in range(20):
+        state.mouse.scroll(0, -1)
+        time.sleep(0.02)
+        
+    time.sleep(0.05)
+    state.mouse.click(Button.left, 2)
+
 def process_command(command_string: str) -> None:   
     commands = command_string.split(";")
     
@@ -346,6 +409,8 @@ def process_command(command_string: str) -> None:
                 add_task(nano_ray, (duration,))
             except ValueError:
                 break
+        elif cmd.startswith("lock"):
+            add_task(insta_lock, tuple([]))
             
 def main() -> None:
     check_admin_privileges()
