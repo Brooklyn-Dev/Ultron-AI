@@ -8,7 +8,7 @@ import sys
 import tempfile
 import threading
 import time
-from typing import Any, Callable, Tuple
+from typing import Callable, Tuple
 import win32gui
 
 from groq import Groq
@@ -60,6 +60,7 @@ class State:
     task_queue: queue.Queue = field(default_factory=queue.Queue)
     keyboard: KeyController = field(default_factory=KeyController)
     mouse: MouseController = field(default_factory=MouseController)
+    is_team_chat: bool = True
 
 state = State()
 
@@ -74,7 +75,7 @@ def task_thread() -> None:
 
 threading.Thread(target=task_thread, daemon=True).start()
 
-def add_task(func: Callable, *args: Tuple[Any]) -> None:
+def add_task(func: Callable, *args: Tuple) -> None:
     state.task_queue.put((func, *args))
 
 ListenerKeyType = Key | KeyCode | None 
@@ -217,6 +218,8 @@ def get_ultron_response(message: str) -> str | None:
                             - delay(T) - Delay T seconds {0.1-10}
                             - nano(T) - Nano ray T seconds {1-8}
                             - lock; - Insta-lock Ultron
+                            - message(text, true) - Send a message in team chat
+                            - message(text, false) - Send a message in match chat
 
                             **COMMAND RULES:**
                             - Chain with semicolons: press(e); delay(0.5); rmb;
@@ -244,6 +247,8 @@ def get_ultron_response(message: str) -> str | None:
                             - "nano/nano ray/stark protocol" = nano(4); (default 4 seconds)
                             - "fire/shoot/encephalo ray" = fire(3); (default 3 shots)
                             - "melee/attack" = melee(1); (default 1 hit)
+                            - "message team/teammates" = message("text", true);
+                            - "message match/everyone" = message("text", false);
 
                             **CHAIN COMMAND PATTERNS:**
                             - "X then Y" = X; delay(0.5); Y;
@@ -365,6 +370,36 @@ def insta_lock() -> None:
     time.sleep(0.05)
     state.mouse.click(Button.left, 2)
 
+def type_message(message: str) -> None:
+    for char in message:
+        state.keyboard.press(char)
+        time.sleep(random.uniform(0.02, 0.1))
+        state.keyboard.release(char)
+
+def chat(message: str, is_team_chat: bool) -> None:
+    print(is_team_chat)
+    if is_team_chat and not state.is_team_chat:
+        press_key(Key.enter)
+        time.sleep(0.05)
+        press_key(Key.tab)
+        type_message(message)
+        time.sleep(0.05)
+        press_key(Key.enter)
+        state.is_team_chat = True
+    elif not is_team_chat and state.is_team_chat:
+        press_key(Key.enter)
+        time.sleep(0.05)
+        press_key(Key.tab)
+        type_message(message)
+        time.sleep(0.05)
+        press_key(Key.enter)
+        state.is_team_chat = False
+    else:
+        press_key(Key.enter)
+        type_message(message)
+        time.sleep(0.1)
+        press_key(Key.enter)
+
 def process_command(command_string: str) -> None:   
     commands = command_string.split(";")
     
@@ -411,6 +446,19 @@ def process_command(command_string: str) -> None:
                 break
         elif cmd.startswith("lock"):
             add_task(insta_lock, tuple([]))
+        elif cmd.startswith("message("):
+            parts = cmd[8:-1].rsplit(",", 1)
+            
+            if len(parts) != 2:
+                return None
+            
+            message_part = parts[0].strip()
+            bool_part = parts[1].strip().lower()
+            
+            if bool_part not in ["true", "false"]:
+                return None
+            
+            add_task(chat, (message_part, bool_part == "true"))
             
 def main() -> None:
     check_admin_privileges()
