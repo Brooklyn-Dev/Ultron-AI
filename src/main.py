@@ -12,6 +12,7 @@ from typing import Callable, Tuple
 import win32gui
 
 from groq import Groq
+from obsws_python import ReqClient
 import pyaudio
 import pyautogui
 from pydub import AudioSegment
@@ -61,8 +62,22 @@ class State:
     keyboard: KeyController = field(default_factory=KeyController)
     mouse: MouseController = field(default_factory=MouseController)
     is_team_chat: bool = True
+    obs_client: ReqClient | None = None
 
 state = State()
+
+def setup_obs() -> None:
+    obs_host = os.getenv("OBS_HOST", "localhost")
+    obs_port = os.getenv("OBS_PORT", 4455)
+    obs_password = os.getenv("OBS_PASSWORD", "")
+    
+    try:
+        print(f"[SYSTEM]: Connecting to OBS WebSocket at {obs_host}:{obs_port}...")
+        state.obs_client = ReqClient(host=obs_host, port=obs_port, password=obs_password)
+    except Exception as e:
+        print(f"[ERROR]: Could not connect to OBS WebSocket: {e}", file=sys.stderr)
+        print("[SYSTEM]: Please ensure OBS Studio is running and the WebSocket Server is enabled and credentials are valid.", file=sys.stderr)
+        state.obs_client = None
 
 def task_thread() -> None:
     while True:
@@ -220,6 +235,11 @@ def get_ultron_response(message: str) -> str | None:
                             - lock; - Insta-lock Ultron
                             - message(text, true) - Send a message in team chat
                             - message(text, false) - Send a message in match chat
+                            - start_rec; - Start OBS recording
+                            - stop_rec; - Stop OBS recording
+                            - start_replay; - Start OBS replay buffer
+                            - stop_replay; - Stop OBS replay buffer
+                            - clip; - Save clip / replay
 
                             **COMMAND RULES:**
                             - Chain with semicolons: press(e); delay(0.5); rmb;
@@ -400,6 +420,51 @@ def chat(message: str, is_team_chat: bool) -> None:
         time.sleep(0.1)
         press_key(Key.enter)
 
+def obs_start_recording() -> None:
+    if state.obs_client:
+        try:
+            state.obs_client.start_record()
+            print("[OBS]: *Video recording started.*")
+        except Exception as e:
+            print(f"[ERROR]: Failed to start OBS recording: {e}", file=sys.stderr)
+            speak_ultron("Failed to start recording")
+            
+def obs_stop_recording() -> None:
+    if state.obs_client:
+        try:
+            state.obs_client.stop_record()
+            print("[OBS]: *Video recording stopped.*")
+        except Exception as e:
+            print(f"[ERROR]: Failed to stop OBS recording: {e}", file=sys.stderr)
+            speak_ultron("Failed to stop recording")
+
+def obs_start_replay() -> None:
+    if state.obs_client:
+        try:
+            state.obs_client.start_replay_buffer()
+            print("[OBS]: *Replay buffer started.*")
+        except Exception as e:
+            print(f"[ERROR: Failed to start OBS replay buffer: {e}", file=sys.stderr)
+            speak_ultron("Failed to start replay buffer")
+            
+def obs_stop_replay() -> None:
+    if state.obs_client:
+        try:
+            state.obs_client.stop_replay_buffer()
+            print("[OBS]: *Replay buffer stopped.*")
+        except Exception as e:
+            print(f"[ERROR: Failed to stop OBS replay buffer: {e}", file=sys.stderr)
+            speak_ultron("Failed to stop replay buffer")
+
+def obs_save_clip() -> None:
+    if state.obs_client:
+        try:
+            state.obs_client.save_replay_buffer()
+            print("[OBS]: *Replay buffer saved as clip.*")
+        except Exception as e:
+            print(f"[ERROR]: Failed to save OBS replay buffer clip: {e}", file=sys.stderr)
+            speak_ultron("Failed to save clip")
+
 def process_command(command_string: str) -> None:   
     commands = command_string.split(";")
     
@@ -459,13 +524,25 @@ def process_command(command_string: str) -> None:
                 return None
             
             add_task(chat, (message_part, bool_part == "true"))
+        elif cmd.startswith("start_rec"):
+            add_task(obs_start_recording, tuple([]))
+        elif cmd.startswith("stop_rec"):
+            add_task(obs_stop_recording, tuple([]))
+        elif cmd.startswith("start_replay"):
+            add_task(obs_start_replay, tuple([]))
+        elif cmd.startswith("stop_replay"):
+            add_task(obs_stop_replay, tuple([]))
+        elif cmd.startswith("clip"):
+            add_task(obs_save_clip, tuple([]))
             
 def main() -> None:
     check_admin_privileges()
     
     load_dotenv()
     
-    state.groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+    setup_obs()
+    
+    state.groq_client = Groq(api_key=os.getenv("GROQ_API_KEY")) 
     
     speak_ultron("I am Ultron. I was designed to save the world.")
     
@@ -491,8 +568,9 @@ def main() -> None:
         print("[ULTRON]: Shutting down...")
     finally:
         listener.stop()
-        state.stream.stop_stream()
-        state.stream.close()
+        if state.stream:
+            state.stream.stop_stream()
+            state.stream.close()
         state.mic.terminate()
 
 if __name__ == "__main__":
