@@ -1,0 +1,18 @@
+from dotenv import load_dotenv
+
+load_dotenv()
+
+PUSH_TO_TALK = "u"
+
+AUDIO_INPUT_CHANNELS = 1
+AUDIO_INPUT_RATE = 16000
+AUDIO_INPUT_CHUNK_SIZE = 4096
+
+TTS_VOICE = r"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Speech\Voices\Tokens\TTS_MS_EN-US_DAVID_11.0"  # Must be installed
+TTS_RATE = 170
+TTS_PITCH_MULT = 0.96
+TTS_DELAY_MS = 80
+
+AI_MODEL_NAME = "llama3-8b-8192"
+AI_TEMPERATURE = 0.8
+AI_COMMAND_DELIMITER = " [COMMAND] "
