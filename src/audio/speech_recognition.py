@@ -25,6 +25,9 @@ def setup_audio_input(state: State) -> None:
     state.recognizer = sr.Recognizer()
 
 def on_press(key: ListenerKeyType) -> None:
+    if g_state.simulating_input:
+        return
+    
     if not g_state.listening and isinstance(key, KeyCode) and key.char == config.PUSH_TO_TALK:
         print("[ULTRON]: *Listening... (release U to stop)*")
         g_state.listening = True

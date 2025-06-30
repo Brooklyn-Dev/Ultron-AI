@@ -4,7 +4,6 @@ import time
 
 from groq import Groq
 from pynput.keyboard import Listener
-import speech_recognition as sr
 
 import config
 from core.state import g_state

@@ -35,6 +35,7 @@ class State:
     keyboard: KeyController = field(default_factory=KeyController)  # Pynput keyboard
     mouse: MouseController = field(default_factory=MouseController)  # Pynput mouse
     is_team_chat: bool = True  # Current chat mode (team/match)
+    simulating_input: bool = False  # Simulating key presses
     
     # OBS Integration
     obs_client: ReqClient | None = None  # OBS WebSocket client

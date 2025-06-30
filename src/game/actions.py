@@ -101,27 +101,32 @@ def type_message(state: State, message: str) -> None:
         state.keyboard.release(char)
 
 def chat(state: State, message: str, is_team_chat: bool) -> None:
-    if is_team_chat and not state.is_team_chat:
-        press_key(state, Key.enter)
-        time.sleep(0.05)
-        press_key(state, Key.tab)
-        type_message(state, message)
-        time.sleep(0.05)
-        press_key(state, Key.enter)
-        state.is_team_chat = True
-    elif not is_team_chat and state.is_team_chat:
-        press_key(state, Key.enter)
-        time.sleep(0.05)
-        press_key(state, Key.tab)
-        type_message(state, message)
-        time.sleep(0.05)
-        press_key(state, Key.enter)
-        state.is_team_chat = False
-    else:
-        press_key(state, Key.enter)
-        type_message(state, message)
-        time.sleep(0.1)
-        press_key(state, Key.enter)
+    state.simulating_input = True
+    
+    try:
+        if is_team_chat and not state.is_team_chat:
+            press_key(state, Key.enter)
+            time.sleep(0.05)
+            press_key(state, Key.tab)
+            type_message(state, message)
+            time.sleep(0.05)
+            press_key(state, Key.enter)
+            state.is_team_chat = True
+        elif not is_team_chat and state.is_team_chat:
+            press_key(state, Key.enter)
+            time.sleep(0.05)
+            press_key(state, Key.tab)
+            type_message(state, message)
+            time.sleep(0.05)
+            press_key(state, Key.enter)
+            state.is_team_chat = False
+        else:
+            press_key(state, Key.enter)
+            type_message(state, message)
+            time.sleep(0.1)
+            press_key(state, Key.enter)
+    finally:
+        state.simulating_input = False
 
 def shutdown(state: State) -> None:
     time.sleep(2)
