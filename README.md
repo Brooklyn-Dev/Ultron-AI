@@ -3,11 +3,21 @@
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![GitHub issues](https://img.shields.io/github/issues/Brooklyn-Dev/Ultron-AI)
 
+<table>
+<tr>
+<td style="vertical-align: top; max-width: 550px;">
 Voice-controlled AI gaming assistant for Marvel Rivals.
-
-Made as a submission to [The Bay](https://shipwrecked.hackclub.com/info/the-bay), an online, project-based, summer coding event by Hack Club.
-
+<br><br>
 Note this is still WIP and Ultron does not process commands correctly 100% of the time
+
+</td>
+<td>
+    <a href="https://shipwrecked.hackclub.com/?t=ghrm" target="_blank">
+        <img src="https://hc-cdn.hel1.your-objectstorage.com/s/v3/739361f1d440b17fc9e2f74e49fc185d86cbec14_badge.png" alt="Shipwrecked badge" style="max-width: 250px;">
+    </a>
+</td>
+</tr>
+</table>
 
 ![Screenshot](screenshot.png)
 
